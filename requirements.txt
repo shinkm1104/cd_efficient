@@ -1,0 +1,26 @@
+# Core packages 
+numpy==1.26.4
+torch==2.1.0+cu118
+torchvision==0.16.0+cu118
+torchaudio==2.1.0+cu118
+
+# Computer Vision
+opencv-python==4.11.0.86
+pillow==11.0.0
+albumentations==2.0.8
+
+# Scientific Computing
+matplotlib==3.9.4
+scipy==1.13.1
+pandas
+scikit-learn
+
+# Deep Learning Utils
+einops==0.8.1
+timm==1.0.19
+tensorboard==2.20.0
+
+# Others
+tqdm==4.67.1
+PyYAML==6.0.2
+rich==14.1.0
