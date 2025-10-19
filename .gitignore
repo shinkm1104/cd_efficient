@@ -3,6 +3,7 @@
 
 # 실험결과
 **/checkpoint/
+/experiments
 
 # 파이썬 캐시
 **/__pycache__/
