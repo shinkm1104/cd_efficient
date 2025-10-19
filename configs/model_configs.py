@@ -109,7 +109,7 @@ def get_model_config(model_name):
             'weight_decay': 0.0005,
             'betas': None,
             'eps': None,
-            'scheduler': 'linear',
+            'scheduler': 'poly',
             'momentum': 0.9,
         },
     }
