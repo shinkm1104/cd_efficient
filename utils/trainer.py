@@ -1,9 +1,10 @@
 """
-Change Detection 학습 관리
+Change Detection 학습 관리 (프로그레스바 개선 버전)
 """
 
 import time
 import json
+import sys
 from pathlib import Path
 from datetime import timedelta
 from typing import Dict, Optional, Tuple
@@ -11,7 +12,9 @@ from typing import Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 import numpy as np
-from tqdm import tqdm
+
+# Jupyter 환경에서도 일반 tqdm 사용 (간단함!)
+from tqdm import tqdm as std_tqdm
 
 from .metrics import CDMetrics
 
@@ -65,11 +68,13 @@ class CDTrainer:
         total_loss = 0
         metrics = CDMetrics()
         
-        pbar = tqdm(
+        # Epoch 내부 프로그레스바
+        pbar = std_tqdm(
             loader,
-            desc=f'[Train] Epoch {self.current_epoch}',
-            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-            leave=False  # 완료 후 프로그레스바 제거
+            desc=f'  ├─Training',
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}',
+            leave=False,
+            file=sys.stdout
         )
         
         for batch in pbar:
@@ -91,9 +96,9 @@ class CDTrainer:
             self.current_iter += 1
             
             # 프로그레스바 업데이트
-            pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+            pbar.set_postfix({'L': f'{loss.item():.3f}'})
         
-        pbar.close()  # 명시적으로 닫기
+        pbar.close()
         avg_loss = total_loss / len(loader)
         results = metrics.get_metrics()
         
@@ -105,11 +110,13 @@ class CDTrainer:
         total_loss = 0
         metrics = CDMetrics()
         
-        pbar = tqdm(
+        # Validation 프로그레스바
+        pbar = std_tqdm(
             loader,
-            desc=f'[{desc}]',
-            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}]',
-            leave=False  # 완료 후 프로그레스바 제거
+            desc=f'  └─{desc}',
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}',
+            leave=False,
+            file=sys.stdout
         )
         
         with torch.no_grad():
@@ -124,9 +131,9 @@ class CDTrainer:
                 total_loss += loss.item()
                 metrics.update(output, label)
                 
-                pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+                pbar.set_postfix({'L': f'{loss.item():.3f}'})
         
-        pbar.close()  # 명시적으로 닫기
+        pbar.close()
         avg_loss = total_loss / len(loader)
         results = metrics.get_metrics()
         
@@ -151,11 +158,10 @@ class CDTrainer:
         path = self.checkpoint_dir / f'checkpoint_epoch_{epoch}.pth'
         torch.save(checkpoint, path)
         
-        # Best 모델
+        # Best 모델 (print 제거 - tqdm.write로 대체)
         if is_best:
             best_path = self.checkpoint_dir / 'best_model.pth'
             torch.save(checkpoint, best_path)
-            print(f"✓ Best model saved! F1: {metrics['f1']:.4f}, IoU: {metrics['iou']:.4f}")
     
     def load_checkpoint(self, path: str):
         """체크포인트 로드"""
@@ -185,19 +191,25 @@ class CDTrainer:
         print("\n" + "="*60)
         print("Starting Training")
         print("="*60)
+        print(f"Total Epochs: {epochs}")
+        print(f"Iterations per epoch: {len(train_loader)}")
+        print(f"Total iterations: {epochs * len(train_loader)}")
+        print("="*60 + "\n")
         
         start_time = time.time()
         
-        for epoch in range(1, epochs + 1):
+        # 📊 전체 Epoch 프로그레스바 (간단하게!)
+        epoch_pbar = std_tqdm(
+            range(1, epochs + 1),
+            desc='Overall Progress',
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}',
+            leave=True,
+            file=sys.stdout
+        )
+        
+        for epoch in epoch_pbar:
             self.current_epoch = epoch
             epoch_start = time.time()
-            
-            # Learning rate 출력
-            if self.scheduler:
-                current_lr = self.optimizer.param_groups[0]['lr']
-                print(f"\nEpoch {epoch}/{epochs} - LR: {current_lr:.6f}")
-            else:
-                print(f"\nEpoch {epoch}/{epochs}")
             
             # Training
             train_loss, train_metrics = self.train_epoch(train_loader)
@@ -205,24 +217,25 @@ class CDTrainer:
             self.history['train_f1'].append(train_metrics['f1'])
             self.history['train_iou'].append(train_metrics['iou'])
             
-            print(f"Train - Loss: {train_loss:.4f}, F1: {train_metrics['f1']:.4f}, "
-                  f"IoU: {train_metrics['iou']:.4f}")
-            
             # Validation
+            val_f1 = 0
+            val_iou = 0
             if epoch % val_interval == 0:
                 val_loss, val_metrics = self.validate(val_loader, 'Val')
                 self.history['val_loss'].append(val_loss)
                 self.history['val_f1'].append(val_metrics['f1'])
                 self.history['val_iou'].append(val_metrics['iou'])
                 
-                print(f"Val   - Loss: {val_loss:.4f}, F1: {val_metrics['f1']:.4f}, "
-                      f"IoU: {val_metrics['iou']:.4f}")
+                val_f1 = val_metrics['f1']
+                val_iou = val_metrics['iou']
                 
                 # Best model 체크
                 if val_metrics['f1'] > self.best_f1:
                     self.best_f1 = val_metrics['f1']
                     self.best_iou = val_metrics['iou']
                     self.save_checkpoint(epoch, val_metrics, is_best=True)
+                    # refresh=False로 프로그레스바 위에 출력
+                    epoch_pbar.write(f"✓ New Best! F1: {self.best_f1:.4f}, IoU: {self.best_iou:.4f}")
             
             # 주기적 저장
             if epoch % save_interval == 0:
@@ -232,10 +245,45 @@ class CDTrainer:
             if self.scheduler:
                 self.scheduler.step()
             
-            # 시간 정보
+            # 📊 전체 프로그레스바 업데이트 (메트릭 표시)
+            postfix_dict = {
+                'TrL': f'{train_loss:.3f}',
+                'TrF1': f'{train_metrics["f1"]:.3f}',
+            }
+            
+            if epoch % val_interval == 0:
+                postfix_dict.update({
+                    'VaF1': f'{val_f1:.3f}',
+                    'Best': f'{self.best_f1:.3f}'
+                })
+            
+            # Learning rate 추가
+            if self.scheduler:
+                current_lr = self.optimizer.param_groups[0]['lr']
+                postfix_dict['LR'] = f'{current_lr:.2e}'
+            
+            epoch_pbar.set_postfix(postfix_dict)
+            
+            # 상세 정보는 epoch_pbar.write()로 출력
             epoch_time = time.time() - epoch_start
-            eta = (time.time() - start_time) / epoch * (epochs - epoch)
-            print(f"Time: {epoch_time:.2f}s, ETA: {str(timedelta(seconds=int(eta)))}")
+            if epoch % val_interval == 0:
+                epoch_pbar.write(
+                    f"Epoch {epoch:4d}/{epochs} | "
+                    f"Train: L={train_loss:.4f} F1={train_metrics['f1']:.4f} | "
+                    f"Val: F1={val_f1:.4f} IoU={val_iou:.4f} | "
+                    f"Time: {epoch_time:.1f}s"
+                )
+            else:
+                epoch_pbar.write(
+                    f"Epoch {epoch:4d}/{epochs} | "
+                    f"Train: L={train_loss:.4f} F1={train_metrics['f1']:.4f} | "
+                    f"Time: {epoch_time:.1f}s"
+                )
+            
+            # 프로그레스바 강제 업데이트 (refresh)
+            epoch_pbar.refresh()
+        
+        epoch_pbar.close()
         
         # 학습 완료
         total_time = time.time() - start_time
