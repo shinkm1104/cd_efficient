@@ -34,41 +34,14 @@ class Change3DBase(nn.Module):
         # [I1, P, I2]를 Time 차원으로 처리
         # Time 차원도 같이 섞어야 변화 학습 가능!
         
-        # Stage 1: [B, 3, 3, H, W] -> [B, 32, 3, H/2, W/2]
-        self.conv3d_1 = nn.Conv3d(
-            3, 32, 
-            kernel_size=(3, 3, 3),  # Time 차원도 섞음!
-            stride=(1, 2, 2), 
-            padding=(1, 1, 1)       # Time padding 추가
+        # 단 1개의 3D Conv!
+        self.conv3d = nn.Conv3d(
+            3, 256, 
+            kernel_size=(3, 5, 5),  # Time은 작게, Spatial은 크게
+            stride=(1, 4, 4),       # Spatial만 stride
+            padding=(1, 2, 2)
         )
-        self.bn1 = nn.BatchNorm3d(32)
-        
-        # Stage 2: [B, 32, 3, H/2, W/2] -> [B, 64, 3, H/4, W/4]
-        self.conv3d_2 = nn.Conv3d(
-            32, 64,
-            kernel_size=(3, 3, 3),  # Time 차원 섞음
-            stride=(1, 2, 2),
-            padding=(1, 1, 1)
-        )
-        self.bn2 = nn.BatchNorm3d(64)
-        
-        # Stage 3: [B, 64, 3, H/4, W/4] -> [B, 128, 3, H/8, W/8]
-        self.conv3d_3 = nn.Conv3d(
-            64, 128,
-            kernel_size=(3, 3, 3),  # Time 차원 섞음
-            stride=(1, 2, 2),
-            padding=(1, 1, 1)
-        )
-        self.bn3 = nn.BatchNorm3d(128)
-        
-        # Stage 4: [B, 128, 3, H/8, W/8] -> [B, 256, 3, H/16, W/16]
-        self.conv3d_4 = nn.Conv3d(
-            128, 256,
-            kernel_size=(3, 3, 3),  # Time 차원 섞음
-            stride=(1, 2, 2),
-            padding=(1, 1, 1)
-        )
-        self.bn4 = nn.BatchNorm3d(256)
+        self.bn = nn.BatchNorm3d(256)
         
         # 🎯 핵심 3: 변화 탐지 헤드 (A2Net처럼 1x1 Conv)
         self.head = nn.Conv2d(256, num_classes, kernel_size=1)
@@ -91,19 +64,16 @@ class Change3DBase(nn.Module):
         video = torch.stack([t1, P, t2], dim=2)  # [B, 3, 3, H, W]
         #                                             ↑ Time=3
         
-        # 3. 3D Convolution으로 특징 추출
-        x = F.relu(self.bn1(self.conv3d_1(video)))  # [B, 32, 3, H/2, W/2]
-        x = F.relu(self.bn2(self.conv3d_2(x)))      # [B, 64, 3, H/4, W/4]
-        x = F.relu(self.bn3(self.conv3d_3(x)))      # [B, 128, 3, H/8, W/8]
-        x = F.relu(self.bn4(self.conv3d_4(x)))      # [B, 256, 3, H/16, W/16]
+        # 3. 3D Convolution으로 특징 추출 (단 1개!)
+        x = F.relu(self.bn(self.conv3d(video)))  # [B, 256, 3, H/4, W/4]
         
         # 4. Perception Feature 추출
         # Time 차원에서 중간(index=1) = Perception Frame의 특징
         # 이게 Change3D의 핵심 트릭!
-        perception_feat = x[:, :, 1, :, :]  # [B, 256, H/16, W/16]
+        perception_feat = x[:, :, 1, :, :]  # [B, 256, H/4, W/4]
         
         # 5. 변화 맵 생성 (A2Net처럼 1x1 Conv)
-        change = self.head(perception_feat)  # [B, 1, H/16, W/16]
+        change = self.head(perception_feat)  # [B, 1, H/4, W/4]
         
         # 6. 원본 크기로 복원
         change_map = F.interpolate(
@@ -154,8 +124,8 @@ if __name__ == "__main__":
     
     print("\n" + "="*60)
     print("✓ Change3D Base implementation complete!")
-    print("  - Only ~130 lines (vs 200+ before)")
-    print("  - No separate Backbone/Decoder classes")
-    print("  - Just 4 Conv3D layers + 1 head")
-    print("  - Similar complexity to A2Net Base")
+    print("  - Only ~80 lines")
+    print("  - Just 1 Conv3D layer!")
+    print("  - Perception Frame + Time modeling")
+    print("  - Similar to A2Net Base complexity")
     print("="*60)
