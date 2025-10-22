@@ -185,13 +185,15 @@ class CDTrainer:
         val_loader,
         epochs: int,
         val_interval: int = 1,
-        save_interval: int = 10
+        save_interval: int = 10,
+        start_epoch=0
     ):
         """전체 학습 프로세스"""
         print("\n" + "="*60)
         print("Starting Training")
         print("="*60)
-        print(f"Total Epochs: {epochs}")
+        print(f"Total Epochs: {epochs-start_epoch}")
+        print(f"Start Epochs: {start_epoch}")
         print(f"Iterations per epoch: {len(train_loader)}")
         print(f"Total iterations: {epochs * len(train_loader)}")
         print("="*60 + "\n")
@@ -200,14 +202,14 @@ class CDTrainer:
         
         # 📊 전체 Epoch 프로그레스바 (간단하게!)
         epoch_pbar = std_tqdm(
-            range(1, epochs + 1),
+            range(start_epoch, epochs + 1),
             desc='Overall Progress',
             bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}',
             leave=True,
             file=sys.stdout
         )
         
-        for epoch in epoch_pbar:
+        for epoch in range(start_epoch, epochs):
             self.current_epoch = epoch
             epoch_start = time.time()
             

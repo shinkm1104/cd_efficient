@@ -72,18 +72,8 @@ def get_model_config(model_name):
             'scheduler': 'poly',
             'momentum': None,
         },
-
-        'Change3D_v2': {
-            'optimizer': 'adam',
-            'learning_rate': 2e-4,
-            'weight_decay': 1e-4,
-            'betas': (0.9, 0.999),
-            'eps': 1e-8,
-            'scheduler': 'poly',
-            'momentum': None,
-        },
         
-        'USSFC-Net': {
+        'USSFCNet': {
             'optimizer': 'adam',
             'learning_rate': 0.0001,
             'weight_decay': 0.0005,
