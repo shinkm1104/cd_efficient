@@ -13,9 +13,9 @@ from pathlib import Path
 from models.x3d import create_x3d
 
 
-class Change3DX3D(nn.Module):
+class Change3DBase(nn.Module):
     """
-    X3D 백본을 사용한 Change3D 네트워크
+    Change3D Base Class
     
     핵심 아이디어:
     1. Perception Frame (학습 가능한 "관찰자")
@@ -23,8 +23,11 @@ class Change3DX3D(nn.Module):
     3. Time 차원에서 Perception Feature 추출
     """
     
-    def __init__(self, num_classes=1, x3d_version='l', pretrained=True):
-        super(Change3DX3D, self).__init__()
+    def __init__(self, num_classes=1, width_factor=2.0, depth_factor=5.0, 
+                 x3d_out_dim=192, version='l'):
+        super(Change3DBase, self).__init__()
+        
+        self.version = version
         
         # 🎯 핵심 1: Perception Frame
         self.perception_frame = nn.Parameter(
@@ -32,39 +35,19 @@ class Change3DX3D(nn.Module):
         )
         
         # 🎯 핵심 2: X3D Backbone 설정
-        if x3d_version.lower() == 'l':
-            # X3D-L 설정 (Large 버전)
-            self.x3d = create_x3d(
-                input_channel=3,
-                input_clip_length=3,  # [I1, P, I2] = 3 frames
-                input_crop_size=256,
-                model_num_class=400,  # Kinetics-400 (가중치 호환성)
-                width_factor=2.0,
-                depth_factor=5.0,  # X3D-L의 핵심: depth가 5배
-                dropout_rate=0.5,
-                head_output_with_global_average=False
-            )
-            x3d_out_dim = 192  # X3D-L의 출력 차원
-            
-        elif x3d_version.lower() == 'xs':
-            # X3D-XS 설정 (eXtra Small 버전)
-            self.x3d = create_x3d(
-                input_channel=3,
-                input_clip_length=3,
-                input_crop_size=256,
-                model_num_class=400,
-                width_factor=2.0,
-                depth_factor=2.2,  # X3D-XS는 2.2배
-                dropout_rate=0.5,
-                head_output_with_global_average=False
-            )
-            x3d_out_dim = 192  # X3D-XS의 출력 차원
-        else:
-            raise ValueError(f"Unknown X3D version: {x3d_version}")
+        self.x3d = create_x3d(
+            input_channel=3,
+            input_clip_length=3,  # [I1, P, I2] = 3 frames
+            input_crop_size=256,
+            model_num_class=400,  # Kinetics-400 (가중치 호환성)
+            width_factor=width_factor,
+            depth_factor=depth_factor,
+            dropout_rate=0.5,
+            head_output_with_global_average=False
+        )
         
         # 🔥 사전학습 가중치 불러오기
-        if pretrained:
-            self.load_pretrained_weights(x3d_version)
+        self.load_pretrained_weights(version)
         
         # X3D의 head 제거 (백본만 사용)
         self.x3d.blocks = self.x3d.blocks[:-1]  # classification head 제거
@@ -203,63 +186,122 @@ class Change3DX3D(nn.Module):
         return change_map
 
 
-# 기본 Change3D 클래스 (간단한 인터페이스)
-class Change3D(nn.Module):
-    """기본 Change3D - X3D-L 사용"""
-    
+class Change3DXS(Change3DBase):
+    """
+    Change3D with X3D-XS (eXtra Small)
+    - Width Factor: 0.5
+    - Depth Factor: 2.2
+    - 가장 작고 빠른 버전
+    """
     def __init__(self, num_classes=1):
-        super(Change3D, self).__init__()
-        # X3D-L을 기본으로 사용 (가중치 있음)
-        self.model = Change3DX3D(
+        super().__init__(
             num_classes=num_classes,
-            x3d_version='l',  # Large 버전
-            pretrained=True   # 사전학습 가중치 사용
+            width_factor=0.5,
+            depth_factor=2.2,
+            x3d_out_dim=48,  # 0.5 * 96
+            version='xs'
         )
-    
-    def forward(self, t1, t2):
-        return self.model(t1, t2)
+
+
+class Change3DS(Change3DBase):
+    """
+    Change3D with X3D-S (Small)
+    - Width Factor: 1.0
+    - Depth Factor: 1.0
+    - 작고 효율적인 버전
+    """
+    def __init__(self, num_classes=1):
+        super().__init__(
+            num_classes=num_classes,
+            width_factor=1.0,
+            depth_factor=1.0,
+            x3d_out_dim=96,
+            version='s'
+        )
+
+
+class Change3DM(Change3DBase):
+    """
+    Change3D with X3D-M (Medium)
+    - Width Factor: 1.5
+    - Depth Factor: 2.9
+    - 균형잡힌 중간 버전
+    """
+    def __init__(self, num_classes=1):
+        super().__init__(
+            num_classes=num_classes,
+            width_factor=1.5,
+            depth_factor=2.9,
+            x3d_out_dim=144,  # 1.5 * 96
+            version='m'
+        )
+
+
+class Change3DL(Change3DBase):
+    """
+    Change3D with X3D-L (Large)
+    - Width Factor: 2.0
+    - Depth Factor: 5.0
+    - 가장 크고 정확한 버전 (기본값)
+    """
+    def __init__(self, num_classes=1):
+        super().__init__(
+            num_classes=num_classes,
+            width_factor=2.0,
+            depth_factor=5.0,
+            x3d_out_dim=192,
+            version='l'
+        )
+
+
+# 기본 Change3D 클래스 (하위 호환성)
+class Change3D(Change3DL):
+    """기본 Change3D = Change3DL (Large 버전)"""
+    pass
 
 
 if __name__ == "__main__":
     print("="*60)
-    print("Change3D with X3D-L Backbone (Pretrained)")
+    print("Change3D with X3D Backbone (Multiple Versions)")
     print("="*60)
     
-    # X3D-L 버전 테스트
-    print("\nInitializing Change3D with X3D-L...")
-    model = Change3DX3D(num_classes=1, x3d_version='l', pretrained=True)
+    # 각 버전별 테스트
+    versions = [
+        ('XS', Change3DXS),
+        ('S', Change3DS),
+        ('M', Change3DM),
+        ('L', Change3DL)
+    ]
     
-    # 모델을 evaluation 모드로
+    print("\n" + "="*60)
+    print("Model Comparison")
+    print("="*60)
+    print(f"{'Version':<10} {'Parameters':<15} {'Size (MB)':<12}")
+    print("-"*60)
+    
+    for name, ModelClass in versions:
+        model = ModelClass(num_classes=1)
+        model.eval()
+        
+        # 파라미터 계산
+        total_params = sum(p.numel() for p in model.parameters())
+        param_size = total_params * 4 / 1024 / 1024  # FP32
+        
+        print(f"{name:<10} {total_params/1e6:>10.2f}M     {param_size:>8.1f} MB")
+    
+    print("="*60)
+    
+    # X3D-L로 forward pass 테스트
+    print("\nTesting Change3DL (default)...")
+    model = Change3DL(num_classes=1)
     model.eval()
     
-    # 테스트 입력
     t1 = torch.randn(2, 3, 256, 256)
     t2 = torch.randn(2, 3, 256, 256)
     
-    print(f"\nInput shapes:")
-    print(f"  t1: {t1.shape}")
-    print(f"  t2: {t2.shape}")
-    
-    # Forward pass
     with torch.no_grad():
         output = model(t1, t2)
     
-    print(f"\nOutput shape:")
-    print(f"  change_map: {output.shape}")
-    
-    # 파라미터 수 계산
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    print(f"\nModel Parameters:")
-    print(f"  Total: {total_params/1e6:.1f}M")
-    print(f"  Trainable: {trainable_params/1e6:.1f}M")
-    
-    # 메모리 사용량 (추정)
-    param_size = total_params * 4 / 1024 / 1024  # FP32 기준
-    print(f"  Estimated size: {param_size:.1f} MB (FP32)")
-    
-    print("\n✅ Change3D with X3D-L ready for training!")
-    print("   - Perception Frame: Learning temporal changes")
-    print("   - X3D-L Backbone: Powerful spatiotemporal features")
-    print("   - Pretrained: Kinetics-400 initialization")
+    print(f"Input: {t1.shape}")
+    print(f"Output: {output.shape}")
+    print("\n✅ All Change3D versions ready!")

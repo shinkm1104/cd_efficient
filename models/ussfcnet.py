@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torchvision.models import resnet18
 
 
-class USSFCNetBase(nn.Module):
+class USSFCNetSkeleton(nn.Module):
     """
     최소 Change Detection 네트워크
     
@@ -24,24 +24,26 @@ class USSFCNetBase(nn.Module):
     """
     
     def __init__(self, num_classes=1):
-        super(USSFCNetBase, self).__init__()
+        super(USSFCNetSkeleton, self).__init__()
         
         # 특징 추출기 1 (Time 1용, ResNet-18 Layer3까지)
         backbone1 = resnet18(pretrained=True)
         self.encoder1 = nn.Sequential(
             backbone1.conv1, backbone1.bn1, backbone1.relu, backbone1.maxpool,
-            backbone1.layer1, backbone1.layer2, backbone1.layer3
+            # backbone1.layer1, backbone1.layer2, backbone1.layer3, 
+            backbone1.layer1, backbone1.layer2, backbone1.layer3, backbone1.layer4
         )  # [B, 256, H/8, W/8]
         
         # # 특징 추출기 2 (Time 2용, 다른 가중치!)
         backbone2 = resnet18(pretrained=True)
         self.encoder2 = nn.Sequential(
             backbone2.conv1, backbone2.bn1, backbone2.relu, backbone2.maxpool,
-            backbone2.layer1, backbone2.layer2, backbone2.layer3
+            # backbone2.layer1, backbone2.layer2, backbone2.layer3,
+            backbone2.layer1, backbone2.layer2, backbone2.layer3, backbone2.layer4
         )  # [B, 256, H/8, W/8]
         
         # 변화 탐지 헤드 (차이를 변화맵으로 변환)
-        self.head = nn.Conv2d(256, num_classes, kernel_size=1)
+        self.head = nn.Conv2d(512, num_classes, kernel_size=1)
         
     def forward(self, t1, t2):
         """
@@ -77,7 +79,7 @@ if __name__ == "__main__":
     print("USSFC-Net Base - True Minimal")
     print("="*60)
     
-    model = USSFCNetBase(num_classes=1)
+    model = USSFCNetSkeleton(num_classes=1)
     
     t1 = torch.randn(2, 3, 256, 256)
     t2 = torch.randn(2, 3, 256, 256)
